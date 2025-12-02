@@ -1,6 +1,7 @@
 use crate::model::DrawModel;
 use crate::model::Vertex;
 mod camera;
+mod entity;
 mod hdr;
 mod model;
 mod resources;
