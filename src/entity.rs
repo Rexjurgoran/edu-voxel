@@ -1,35 +1,69 @@
-#[derive(Clone, Copy)]
-/// Type of block
-pub enum BlockType {
-    Air,
-    Grass,
+use std::vec;
+use wgpu::util::DeviceExt;
+
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct Voxel {
+    id: u32,
+}
+impl Voxel {
+    pub fn new(id: u32) -> Self {
+        Self { id }
+    }
 }
 
 #[derive(Clone)]
 /// Chunk consisting of blocks
 pub struct Chunk {
-    blocks: Vec<BlockType>,
+    blocks: Vec<Voxel>,
+    buffer: wgpu::Buffer,
 }
 impl Chunk {
-    pub fn default() -> Self {
+    pub fn default(device: &wgpu::Device) -> Self {
         let blocks =
-            vec![BlockType::Air; Self::CHUNK_WIDTH * Self::CHUNK_LENGTH * Self::CHUNK_HEIGHT];
-        Self { blocks }
+            vec![Voxel::new(0); Self::CHUNK_WIDTH * Self::CHUNK_LENGTH * Self::CHUNK_HEIGHT];
+        let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Chunk Buffer"),
+            contents: bytemuck::cast_slice(&blocks),
+            usage: wgpu::BufferUsages::STORAGE,
+        });
+        Self { blocks, buffer }
+    }
+
+    pub fn half(device: &wgpu::Device) -> Self {
+        let block_amount = Self::CHUNK_WIDTH * Self::CHUNK_LENGTH * Self::CHUNK_HEIGHT;
+        let mut blocks = Vec::with_capacity(block_amount);
+
+        for _ in 0..(block_amount / 2) {
+            blocks.push(Voxel::new(1));
+        }
+
+        for _ in (block_amount / 2)..block_amount {
+            blocks.push(Voxel::new(0));
+        }
+
+        let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Chunk Buffer"),
+            contents: bytemuck::cast_slice(&blocks),
+            usage: wgpu::BufferUsages::STORAGE,
+        });
+
+        Self { blocks, buffer }
     }
 
     const CHUNK_WIDTH: usize = 16;
     const CHUNK_LENGTH: usize = 16;
-    const CHUNK_HEIGHT: usize = 256;
+    const CHUNK_HEIGHT: usize = 32;
 
     fn index(x: usize, y: usize, z: usize) -> usize {
         x + Self::CHUNK_WIDTH * (z + Self::CHUNK_LENGTH * y)
     }
 
-    pub fn get(&self, x: usize, y: usize, z: usize) -> BlockType {
+    pub fn get(&self, x: usize, y: usize, z: usize) -> Voxel {
         self.blocks[Self::index(x, y, z)]
     }
 
-    pub fn set(&mut self, block: BlockType, x: usize, y: usize, z: usize) {
+    pub fn set(&mut self, block: Voxel, x: usize, y: usize, z: usize) {
         self.blocks[Self::index(x, y, z)] = block;
     }
 }
@@ -39,8 +73,8 @@ pub struct World {
     chunks: Vec<Chunk>,
 }
 impl World {
-    pub fn default() -> Self {
-        let chunks = vec![Chunk::default(); Self::WORLD_WIDTH * Self::WORLD_LENGTH];
+    pub fn default(device: &wgpu::Device) -> Self {
+        let chunks = vec![Chunk::half(device); Self::WORLD_WIDTH * Self::WORLD_LENGTH];
         Self { chunks }
     }
 
