@@ -1,3 +1,4 @@
+use cgmath::Vector3;
 use std::vec;
 use wgpu::util::DeviceExt;
 
@@ -12,22 +13,55 @@ impl Voxel {
     }
 }
 
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct Face {
+    location: Vector3<u8>,
+    direction: u8,
+}
+
 #[derive(Clone)]
 /// Chunk consisting of blocks
 pub struct Chunk {
     blocks: Vec<Voxel>,
-    buffer: wgpu::Buffer,
+    // Faces I want to render
+    face_buffer: wgpu::Buffer,
+    // Make vertices reusable
+    index_buffer: wgpu::Buffer,
 }
 impl Chunk {
     pub fn default(device: &wgpu::Device) -> Self {
         let blocks =
             vec![Voxel::new(0); Self::CHUNK_WIDTH * Self::CHUNK_LENGTH * Self::CHUNK_HEIGHT];
-        let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Chunk Buffer"),
-            contents: bytemuck::cast_slice(&blocks),
+        let face_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Face Buffer of Chunk"),
+            contents: bytemuck::cast_slice(&Self::get_faces()),
             usage: wgpu::BufferUsages::STORAGE,
         });
-        Self { blocks, buffer }
+        let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Index Buffer of Chunk"),
+            contents: bytemuck::cast_slice(&indeces),
+            usage: wgpu::BufferUsages::INDEX,
+        });
+        Self {
+            blocks,
+            face_buffer,
+            index_buffer,
+        }
+    }
+
+    fn get_faces() -> Vec<Face> {
+        let size = Self::CHUNK_WIDTH * Self::CHUNK_LENGTH;
+        let mut faces = Vec::with_capacity(size);
+        for x in 0..Self::CHUNK_WIDTH {
+            for y in 0..Self::CHUNK_LENGTH {
+                faces.push(Face {
+                    location: Vector3::new(x as u8, y as u8, 15),
+                    direction: 1,
+                });
+            }
+        }
+        faces
     }
 
     pub fn half(device: &wgpu::Device) -> Self {
