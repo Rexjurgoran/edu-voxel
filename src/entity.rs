@@ -18,7 +18,6 @@ impl Voxel {
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct Face {
     location: [u8; 3],
-    location: [u8; 3],
     direction: u8,
 }
 
@@ -79,14 +78,13 @@ impl Chunk {
         let face_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Face Buffer of Chunk"),
             contents: bytemuck::cast_slice(&faces),
-            contents: bytemuck::cast_slice(&faces),
             usage: wgpu::BufferUsages::STORAGE,
         });
 
         let indeces: Vec<u32> = vec![0, 1, 2, 2, 3, 0];
         let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Index Buffer of Chunk"),
-            contents: bytemuck::cast_slice(&Self::get_indeces(faces.len())),
+            contents: bytemuck::cast_slice(&indeces),
             usage: wgpu::BufferUsages::INDEX,
         });
 
@@ -105,7 +103,6 @@ impl Chunk {
         for x in 0..Self::CHUNK_WIDTH {
             for y in 0..Self::CHUNK_LENGTH {
                 faces.push(Face {
-                    location: [x as u8, y as u8, 15],
                     location: [x as u8, y as u8, 15],
                     direction: 1,
                 });
