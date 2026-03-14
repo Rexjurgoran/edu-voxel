@@ -160,10 +160,12 @@ struct State {
     camera_uniform: CameraUniform,
     camera_buffer: wgpu::Buffer,
     camera_bind_group: wgpu::BindGroup,
-    instances: Vec<Instance>,
-    instance_buffer: wgpu::Buffer,
+    // instances: Vec<Instance>,
+    // instance_buffer: wgpu::Buffer,
+    face_bind_group: wgpu::BindGroup,
     depth_texture: Texture,
-    obj_model: Model,
+    // obj_model: Model,
+    chunk: entity::Chunk,
     light_uniform: LightUniform,
     light_buffer: wgpu::Buffer,
     light_bind_group: wgpu::BindGroup,
@@ -388,6 +390,33 @@ impl State {
             usage: wgpu::BufferUsages::VERTEX,
         });
 
+        let chunk = entity::Chunk::half(&device);
+
+        // Create the bind group layout for the faces of the chunk
+        let face_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }],
+                label: Some("face_bind_group_layout"),
+            });
+
+        let face_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &face_bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: chunk.get_face_buffer().as_entire_binding(),
+            }],
+            label: Some("face_bind_group"),
+        });
+
         let camera_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 entries: &[wgpu::BindGroupLayoutEntry {
@@ -535,6 +564,7 @@ impl State {
                     &camera_bind_group_layout,
                     &light_bind_group_layout,
                     &environment_layout,
+                    &face_bind_group_layout,
                 ],
                 push_constant_ranges: &[],
             });
@@ -549,7 +579,7 @@ impl State {
                 &render_pipeline_layout,
                 hdr.format(),
                 Some(texture::Texture::DEPTH_FORMAT),
-                &[model::ModelVertex::desc(), InstanceRaw::desc()],
+                &[], // &[model::ModelVertex::desc(), InstanceRaw::desc()],
                 wgpu::PrimitiveTopology::TriangleList,
                 shader,
             )
@@ -590,10 +620,12 @@ impl State {
             camera_uniform,
             camera_buffer,
             camera_bind_group,
-            instances,
-            instance_buffer,
+            // instances,
+            // instance_buffer,
+            face_bind_group,
             depth_texture,
-            obj_model,
+            // obj_model,
+            chunk,
             light_buffer,
             light_uniform,
             light_bind_group,
@@ -706,27 +738,29 @@ impl State {
                 timestamp_writes: None,
             });
 
-            render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
+            // render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
             render_pass.set_pipeline(&self.light_render_pipeline);
-            render_pass.draw_light_model(
-                &self.obj_model,
-                &self.camera_bind_group,
-                &self.light_bind_group,
-            );
+            // render_pass.draw_light_model(
+            //     &self.obj_model,
+            //     &self.camera_bind_group,
+            //     &self.light_bind_group,
+            // );
 
             render_pass.set_pipeline(&self.render_pipeline);
-            render_pass.draw_model_instanced(
-                &self.obj_model,
-                0..self.instances.len() as u32,
-                &self.camera_bind_group,
-                &self.light_bind_group,
-                &self.environment_bind_group,
-            );
+            // render_pass.draw_model_instanced(
+            //     &self.obj_model,
+            //     0..self.instances.len() as u32,
+            //     &self.camera_bind_group,
+            //     &self.light_bind_group,
+            //     &self.environment_bind_group,
+            // );
 
             render_pass.set_pipeline(&self.sky_pipeline);
             render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
             render_pass.set_bind_group(1, &self.environment_bind_group, &[]);
             render_pass.draw(0..3, 0..1);
+            render_pass.set_bind_group(4, &self.face_bind_group, &[]);
+            render_pass.draw(0..self.chunk.face_count * 6, 0..1);
         }
 
         self.hdr.process(&mut encoder, &view);
@@ -739,20 +773,14 @@ impl State {
     }
 }
 pub struct App {
-    #[cfg(target_arch = "wasm32")]
-    proxy: Option<winit::event_loop::EventLoopProxy<State>>,
     state: Option<State>,
     last_time: instant::Instant,
 }
 
 impl App {
-    pub fn new(#[cfg(target_arch = "wasm32")] event_loop: &EventLoop<State>) -> Self {
-        #[cfg(target_arch = "wasm32")]
-        let proxy = Some(event_loop.create_proxy());
+    pub fn new() -> Self {
         Self {
             state: None,
-            #[cfg(target_arch = "wasm32")]
-            proxy,
             last_time: instant::Instant::now(),
         }
     }
@@ -763,44 +791,12 @@ impl ApplicationHandler<State> for App {
         #[allow(unused_mut)]
         let mut window_attributes = Window::default_attributes();
 
-        #[cfg(target_arch = "wasm32")]
-        {
-            use wasm_bindgen::JsCast;
-            use winit::platform::web::WindowAttributesExtWebSys;
-
-            const CANVAS_ID: &str = "canvas";
-
-            let window = wgpu::web_sys::window().unwrap_throw();
-            let document = window.document().unwrap_throw();
-            let canvas = document.get_element_by_id(CANVAS_ID).unwrap_throw();
-            let html_canvas_element = canvas.unchecked_into();
-            window_attributes = window_attributes.with_canvas(Some(html_canvas_element));
-        }
-
         let window = Arc::new(event_loop.create_window(window_attributes).unwrap());
 
-        #[cfg(not(target_arch = "wasm32"))]
         {
             // If we are not on web we can use pollster to
             // await the
             self.state = Some(pollster::block_on(State::new(window)).unwrap());
-        }
-
-        #[cfg(target_arch = "wasm32")]
-        {
-            if let Some(proxy) = self.proxy.take() {
-                wasm_bindgen_futures::spawn_local(async move {
-                    assert!(
-                        proxy
-                            .send_event(
-                                State::new(window)
-                                    .await
-                                    .expect("Unable to create canvas!!!")
-                            )
-                            .is_ok()
-                    )
-                });
-            }
         }
     }
 
@@ -887,20 +883,12 @@ impl ApplicationHandler<State> for App {
 }
 
 pub fn run() -> anyhow::Result<()> {
-    #[cfg(not(target_arch = "wasm32"))]
     {
         env_logger::init();
     }
-    #[cfg(target_arch = "wasm32")]
-    {
-        console_log::init_with_level(log::Level::Info).unwrap_throw();
-    }
 
     let event_loop = EventLoop::with_user_event().build()?;
-    let mut app = App::new(
-        #[cfg(target_arch = "wasm32")]
-        &event_loop,
-    );
+    let mut app = App::new();
     event_loop.run_app(&mut app)?;
 
     Ok(())

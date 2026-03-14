@@ -28,6 +28,7 @@ pub struct Chunk {
     face_buffer: wgpu::Buffer,
     // Make vertices reusable
     index_buffer: wgpu::Buffer,
+    pub face_count: u32,
 }
 impl Chunk {
     // -- Constants --
@@ -58,6 +59,7 @@ impl Chunk {
             blocks,
             face_buffer,
             index_buffer,
+            face_count: faces.len() as u32,
         }
     }
 
@@ -92,6 +94,7 @@ impl Chunk {
             blocks,
             face_buffer,
             index_buffer,
+            face_count: faces.len() as u32,
         }
     }
 
@@ -121,6 +124,10 @@ impl Chunk {
 
     pub fn set(&mut self, block: Voxel, x: usize, y: usize, z: usize) {
         self.blocks[Self::index(x, y, z)] = block;
+    }
+
+    pub fn get_face_buffer(&self) -> &wgpu::Buffer {
+        &self.face_buffer
     }
 }
 
