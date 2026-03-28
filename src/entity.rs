@@ -1,6 +1,13 @@
 use cgmath::Vector3;
 use wgpu::util::DeviceExt;
 
+pub const FACE_TOP: u8 = 1;
+pub const FACE_FRONT: u8 = 2;
+pub const FACE_RIGHT: u8 = 3;
+pub const FACE_LEFT: u8 = 4;
+pub const FACE_BACK: u8 = 5;
+pub const FACE_BOTTOM: u8 = 6;
+
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct Voxel {
@@ -17,6 +24,7 @@ impl Voxel {
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct Face {
+    // Position of the bottom left corner of the face
     location: [u8; 3],
     direction: u8,
 }
@@ -107,7 +115,7 @@ impl Chunk {
             for y in 0..Self::CHUNK_LENGTH {
                 faces.push(Face {
                     location: [x as u8, y as u8, 15],
-                    direction: 1,
+                    direction: FACE_TOP,
                 });
             }
         }

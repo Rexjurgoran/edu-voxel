@@ -270,7 +270,10 @@ impl State {
             .request_device(&wgpu::DeviceDescriptor {
                 label: None,
                 required_features: wgpu::Features::empty(),
-                required_limits: wgpu::Limits::downlevel_defaults(),
+                required_limits: wgpu::Limits {
+                    max_bind_groups: 5,
+                    ..wgpu::Limits::downlevel_defaults()
+                },
                 memory_hints: Default::default(),
                 trace: wgpu::Trace::Off,
             })
@@ -556,15 +559,16 @@ impl State {
             )
         };
 
+        // ToDo: Use four bind group layouts, grouped by update frequency
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Render Pipeline Layout"),
                 bind_group_layouts: &[
-                    &texture_bind_group_layout,
-                    &camera_bind_group_layout,
-                    &light_bind_group_layout,
-                    &environment_layout,
-                    &face_bind_group_layout,
+                    &texture_bind_group_layout, // Bind the diffuse texture, normal map, and their samplers
+                    &camera_bind_group_layout,  // Transform positions and specular information
+                    &light_bind_group_layout, // Used for diffuse and specular lighting calculations
+                    &environment_layout,      // Cubemap for reflections
+                    &face_bind_group_layout,  // Face positions and directions to generate vertices
                 ],
                 push_constant_ranges: &[],
             });
@@ -739,14 +743,14 @@ impl State {
             });
 
             // render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
-            render_pass.set_pipeline(&self.light_render_pipeline);
+            // render_pass.set_pipeline(&self.light_render_pipeline);
             // render_pass.draw_light_model(
             //     &self.obj_model,
             //     &self.camera_bind_group,
             //     &self.light_bind_group,
             // );
 
-            render_pass.set_pipeline(&self.render_pipeline);
+            // render_pass.set_pipeline(&self.render_pipeline);
             // render_pass.draw_model_instanced(
             //     &self.obj_model,
             //     0..self.instances.len() as u32,
@@ -755,10 +759,18 @@ impl State {
             //     &self.environment_bind_group,
             // );
 
+            // Render the skybox first so that it will be in the background of everything else
             render_pass.set_pipeline(&self.sky_pipeline);
             render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
             render_pass.set_bind_group(1, &self.environment_bind_group, &[]);
             render_pass.draw(0..3, 0..1);
+
+            // Then render the chunk
+            render_pass.set_pipeline(&self.render_pipeline);
+            render_pass.set_bind_group(0, &self.texture_bind_group, &[]);
+            render_pass.set_bind_group(1, &self.camera_bind_group, &[]);
+            render_pass.set_bind_group(2, &self.light_bind_group, &[]);
+            render_pass.set_bind_group(3, &self.environment_bind_group, &[]);
             render_pass.set_bind_group(4, &self.face_bind_group, &[]);
             render_pass.draw(0..self.chunk.face_count * 6, 0..1);
         }

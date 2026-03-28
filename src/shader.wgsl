@@ -6,6 +6,13 @@ struct Camera {
     inv_proj: mat4x4<f32>,
     inv_view: mat4x4<f32>,
 }
+struct Face {
+    data: u32, // Packed data for location and direction
+}
+struct UnpackedFace {
+    location: vec3<f32>,
+    direction: u32,
+}
 @group(1) @binding(0)
 var<uniform> camera: Camera;
 
@@ -16,67 +23,109 @@ struct Light {
 @group(2) @binding(0)
 var<uniform> light: Light;
 
-struct VertexInput {
-    @location(0) position: vec3<f32>,
-    @location(1) tex_coords: vec2<f32>,
-    @location(2) normal: vec3<f32>,
-    @location(3) tangent: vec3<f32>,
-    @location(4) bitangent: vec3<f32>,
-}
-
-struct InstanceInput {
-    @location(5) model_matrix_0: vec4<f32>,
-    @location(6) model_matrix_1: vec4<f32>,
-    @location(7) model_matrix_2: vec4<f32>,
-    @location(8) model_matrix_3: vec4<f32>,
-    @location(9) normal_matrix_0: vec3<f32>,
-    @location(10) normal_matrix_1: vec3<f32>,
-    @location(11) normal_matrix_2: vec3<f32>,
-}
+@group(4) @binding(0)
+var<storage, read> faces: array<Face>;
 
 struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
     @location(0) tex_coords: vec2<f32>,
     @location(1) world_position: vec3<f32>,
     @location(2) world_view_position: vec3<f32>,
-    @location(3) world_light_position: vec3<f32>,
-    @location(4) world_normal: vec3<f32>,
-    @location(5) world_tangent: vec3<f32>,
-    @location(6) world_bitangent: vec3<f32>,
+    @location(3) world_normal: vec3<f32>,
+    @location(4) world_tangent: vec3<f32>,
+    @location(5) world_bitangent: vec3<f32>,
 };
 
-// Annotate as entry point for vertex shader
+// Vertex shader runs once per vertex to determine the position of the vertex 
+// on the screen and pass data to the fragment shader
 @vertex
-fn vs_main(
-    model: VertexInput,
-    instance: InstanceInput,
-) -> VertexOutput {
-    let model_matrix = mat4x4<f32>(
-        instance.model_matrix_0,
-        instance.model_matrix_1,
-        instance.model_matrix_2,
-        instance.model_matrix_3,
-    );
-    let normal_matrix = mat3x3<f32>(
-        instance.normal_matrix_0,
-        instance.normal_matrix_1,
-        instance.normal_matrix_2,
-    );
+fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
+    // By dividing the vertex index by the number of vertices per face, we can 
+    // determine which face we are currently processing
+    let face_index = vertex_index / 6u; 
 
-    let world_position = model_matrix * vec4<f32>(model.position, 1.0);
+    // Unpack face and match normals from direction
+    let face = unpack_face(faces[face_index]);
+    let normal = face_normal(face.direction);
+    let tangent = face_tangent(face.direction);
+    let bitangent = cross(normal, tangent);
+
+    // Get position of the vertex by adding the corner offset to the face location
+    let corner_index = get_corner_index(vertex_index % 6u);
+    let corner_offset = get_corner_offset(corner_index);
+    let position = face.location + vec3<f32>(corner_offset, 0);
 
     var out: VertexOutput;
-    out.clip_position = camera.view_proj * world_position;
-    out.tex_coords = model.tex_coords;
-    out.world_normal = normalize(normal_matrix * model.normal);
-    out.world_tangent = normalize(normal_matrix * model.tangent);
-    out.world_bitangent = normalize(normal_matrix * model.bitangent);
-    out.world_position = world_position.xyz;
+    out.clip_position = camera.view_proj * vec4<f32>(position, 1.0);
+    out.tex_coords = corner_offset;
+    out.world_position = position;
+    out.world_normal = normal;
+    out.world_tangent = tangent;
+    out.world_bitangent = bitangent;
     out.world_view_position = camera.view_pos.xyz;
     return out;
 }
 
-// Fragment shader
+// Unpacks the face data from a single u32 into its components. This is more 
+//memory efficient, because we just need to unpack the current face
+fn unpack_face(face: Face) -> UnpackedFace {
+    let x = f32(face.data & 0xFFu); // Extract the lower 8 bits
+    let y = f32((face.data >> 8) & 0xFFu); // Extract the next 8 bits
+    let z = f32((face.data >> 16) & 0xFFu); // Extract the next 8 bits
+    let dir = u32((face.data >> 24) & 0xFFu);
+    return UnpackedFace(vec3<f32>(x, y, z), dir);
+}
+
+// Each face direction corresponds to a specific tangent vector
+// Directions are defined in entity.rs as constants for better readability
+fn face_tangent(direction: u32) -> vec3<f32> {
+    switch (direction) {
+        case 1u: { return vec3<f32>(1, 0, 0); } // Top
+        case 2u: { return vec3<f32>(1, 0, 0); } // Front
+        case 3u: { return vec3<f32>(0, 0, -1); } // Right
+        case 4u: { return vec3<f32>(0, 0, 1); } // Left
+        case 5u: { return vec3<f32>(1, 0, 0); } // Back
+        default: { return vec3<f32>(1, 0, 0); } // Bottom
+    }
+}
+
+// Each face direction corresponds to a specific normal vector
+// Directions are defined in entity.rs as constants for better readability
+fn face_normal(direction: u32) -> vec3<f32> {
+    switch (direction) {
+        case 1u: { return vec3<f32>(0, 1, 0); } // Top
+        case 2u: { return vec3<f32>(0, 0, 1); } // Front
+        case 3u: { return vec3<f32>(1, 0, 0); } // Right
+        case 4u: { return vec3<f32>(-1, 0, 0); } // Left
+        case 5u: { return vec3<f32>(0, 0, -1); } // Back
+        default: { return vec3<f32>(0, -1, 0); } // Bottom
+    }
+}
+
+// Map the vertex index to the corresponding corner of the face
+fn get_corner_index(face_vertex: u32) -> u32 {
+    switch (face_vertex) {
+        // First triangle
+        case 0u: { return 0u; } // Bottom-left
+        case 1u: { return 1u; } // Bottom-right
+        case 2u: { return 2u; } // Top-right
+        // Second triangle
+        case 3u: { return 0u; } // Bottom-left
+        case 4u: { return 2u; } // Top-right
+        default: { return 3u; } // Top-left
+    }
+}
+
+// Map the corner index to the corresponding offset on the face
+fn get_corner_offset(corner_index: u32) -> vec2<f32> {
+    switch (corner_index) {
+        case 0u: { return vec2<f32>(0.0, 0.0); } // Bottom-left
+        case 1u: { return vec2<f32>(1.0, 0.0); } // Bottom-right
+        case 2u: { return vec2<f32>(1.0, 1.0); } // Top-right
+        default: { return vec2<f32>(0.0, 1.0); } // Top-left
+    }
+}
+
 @group(0) @binding(0)
 var t_diffuse: texture_2d<f32>;
 @group(0)@binding(1)
@@ -93,6 +142,7 @@ var env_map: texture_cube<f32>;
 @binding(1)
 var env_sampler: sampler;
 
+// Fragment shader runs once per pixel to determine the final color of the pixel
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let object_color: vec4<f32> = textureSample(t_diffuse, s_diffuse, in.tex_coords);
