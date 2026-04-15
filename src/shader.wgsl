@@ -1,4 +1,10 @@
-// Vertex shader
+// Constants
+const TILES_PER_ROW: f32 = 2.0;
+const TILES_PER_COLUMN: f32 = 2.0;
+const TILE_WIDTH: f32 = 1.0 / TILES_PER_ROW;
+const TILE_HEIGHT: f32 = 1.0 / TILES_PER_COLUMN;
+
+// Structs
 struct Camera {
     view_pos: vec4<f32>,
     view: mat4x4<f32>,
@@ -7,11 +13,13 @@ struct Camera {
     inv_view: mat4x4<f32>,
 }
 struct Face {
-    data: u32, // Packed data for location and direction
+    data0: u32, // Packed data for location and direction
+    data1: u32, // Block ID and padding for alignment
 }
 struct UnpackedFace {
     location: vec3<f32>,
     direction: u32,
+    uv_offset: vec2<f32>, // top-left corner of the face in the texture atlas
 }
 @group(1) @binding(0)
 var<uniform> camera: Camera;
@@ -53,11 +61,14 @@ fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
     // Get position of the vertex by adding the corner offset to the face location
     let corner_index = get_corner_index(vertex_index % 6u);
     let corner_offset = get_corner_offset(corner_index);
-    let position = face.location + vec3<f32>(corner_offset, 0);
+    let position = face.location 
+        + tangent * corner_offset.x
+        + bitangent * corner_offset.y
+        + normal * 0.5; // Move the vertex from voxel center to the face plane
 
     var out: VertexOutput;
     out.clip_position = camera.view_proj * vec4<f32>(position, 1.0);
-    out.tex_coords = corner_offset;
+    out.tex_coords = face.uv_offset + vec2<f32>(corner_offset.x * TILE_WIDTH, corner_offset.y * TILE_HEIGHT);
     out.world_position = position;
     out.world_normal = normal;
     out.world_tangent = tangent;
@@ -69,11 +80,15 @@ fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
 // Unpacks the face data from a single u32 into its components. This is more 
 //memory efficient, because we just need to unpack the current face
 fn unpack_face(face: Face) -> UnpackedFace {
-    let x = f32(face.data & 0xFFu); // Extract the lower 8 bits
-    let y = f32((face.data >> 8) & 0xFFu); // Extract the next 8 bits
-    let z = f32((face.data >> 16) & 0xFFu); // Extract the next 8 bits
-    let dir = u32((face.data >> 24) & 0xFFu);
-    return UnpackedFace(vec3<f32>(x, y, z), dir);
+    let x = f32(face.data0 & 0xFFu); // Extract the lower 8 bits
+    let y = f32((face.data0 >> 8) & 0xFFu); // Extract the next 8 bits
+    let z = f32((face.data0 >> 16) & 0xFFu); // Extract the next 8 bits
+    let dir = u32((face.data0 >> 24) & 0xFFu);
+    let block_id = u32(face.data1 & 0xFFu); // Extract the lower 8 bits for block ID
+    let uv_offset = vec2<f32>(f32(
+        block_id % 32u) * TILE_WIDTH, // Calculate the x offset in the texture atlas
+        f32(block_id / 32u) * TILE_HEIGHT); // Calculate the y offset in the texture atlas
+    return UnpackedFace(vec3<f32>(x, y, z), dir, uv_offset);
 }
 
 // Each face direction corresponds to a specific tangent vector

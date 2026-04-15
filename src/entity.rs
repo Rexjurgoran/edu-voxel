@@ -1,4 +1,3 @@
-use cgmath::Vector3;
 use wgpu::util::DeviceExt;
 
 pub const FACE_TOP: u8 = 1;
@@ -27,6 +26,8 @@ pub struct Face {
     // Position of the bottom left corner of the face
     location: [u8; 3],
     direction: u8,
+    block_id: u8,
+    _padding: [u8; 3], // Padding to make the struct 8 bytes long (2 x u32)
 }
 
 /// Chunk consisting of blocks
@@ -112,10 +113,12 @@ impl Chunk {
         let size = Self::CHUNK_WIDTH * Self::CHUNK_LENGTH;
         let mut faces = Vec::with_capacity(size);
         for x in 0..Self::CHUNK_WIDTH {
-            for y in 0..Self::CHUNK_LENGTH {
+            for z in 0..Self::CHUNK_LENGTH {
                 faces.push(Face {
-                    location: [x as u8, y as u8, 15],
+                    location: [x as u8, 0, z as u8],
                     direction: FACE_TOP,
+                    block_id: 1,
+                    _padding: [0; 3],
                 });
             }
         }

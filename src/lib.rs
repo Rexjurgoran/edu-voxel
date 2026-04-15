@@ -174,6 +174,7 @@ struct State {
     hdr: hdr::HdrPipeline,
     environment_bind_group: wgpu::BindGroup,
     sky_pipeline: wgpu::RenderPipeline,
+    texture_bind_group: wgpu::BindGroup,
 }
 
 fn create_render_pipeline(
@@ -610,6 +611,31 @@ impl State {
             )
         };
 
+        let texture = resources::load_texture("block_atlas.png", false, &device, &queue).await?;
+        let normal = resources::load_texture("normal16.png", true, &device, &queue).await?;
+        let texture_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("texture_bind_group"),
+            layout: &texture_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&texture.view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&texture.sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::TextureView(&normal.view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: wgpu::BindingResource::Sampler(&normal.sampler),
+                },
+            ],
+        });
+
         Ok(Self {
             surface,
             device,
@@ -638,6 +664,7 @@ impl State {
             hdr,
             environment_bind_group,
             sky_pipeline,
+            texture_bind_group,
         })
     }
 
@@ -772,6 +799,7 @@ impl State {
             render_pass.set_bind_group(2, &self.light_bind_group, &[]);
             render_pass.set_bind_group(3, &self.environment_bind_group, &[]);
             render_pass.set_bind_group(4, &self.face_bind_group, &[]);
+            println!("Face count: {}", self.chunk.face_count);
             render_pass.draw(0..self.chunk.face_count * 6, 0..1);
         }
 
