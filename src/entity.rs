@@ -1,19 +1,21 @@
 use wgpu::util::DeviceExt;
 
-pub const FACE_TOP: u8 = 1;
-pub const FACE_FRONT: u8 = 2;
-pub const FACE_RIGHT: u8 = 3;
-pub const FACE_LEFT: u8 = 4;
-pub const FACE_BACK: u8 = 5;
-pub const FACE_BOTTOM: u8 = 6;
+// Face direction constants. The origin of a voxel is the bottom left corner.
+// The direction is used to calculate the position of the vertices of the face.
+pub const FACE_RIGHT: u8 = 0; // positive X direction
+pub const FACE_LEFT: u8 = 1; // negative X direction
+pub const FACE_TOP: u8 = 2; // positive Y direction
+pub const FACE_BOTTOM: u8 = 3; // negative Y direction
+pub const FACE_FRONT: u8 = 4; // positive Z direction
+pub const FACE_BACK: u8 = 5; // negative Z direction
 
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct Voxel {
-    id: u32,
+    id: u8,
 }
 impl Voxel {
-    pub fn new(id: u32) -> Self {
+    pub fn new(id: u8) -> Self {
         Self { id }
     }
 }
@@ -30,9 +32,20 @@ pub struct Face {
     _padding: [u8; 3], // Padding to make the struct 8 bytes long (2 x u32)
 }
 
+impl Face {
+    pub fn new(location: [u8; 3], direction: u8, block_id: u8) -> Self {
+        Self {
+            location,
+            direction,
+            block_id,
+            _padding: [0; 3],
+        }
+    }
+}
+
 /// Chunk consisting of blocks
 pub struct Chunk {
-    blocks: Vec<Voxel>,
+    voxels: Vec<Voxel>,
     // Faces I want to render
     face_buffer: wgpu::Buffer,
     // Make vertices reusable
@@ -50,7 +63,7 @@ impl Chunk {
         let blocks =
             vec![Voxel::new(0); Self::CHUNK_WIDTH * Self::CHUNK_LENGTH * Self::CHUNK_HEIGHT];
 
-        let faces = Self::get_faces();
+        let faces = Self::get_faces(&blocks);
         let face_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Face Buffer of Chunk"),
             contents: bytemuck::cast_slice(&faces),
@@ -65,7 +78,7 @@ impl Chunk {
         });
 
         Self {
-            blocks,
+            voxels: blocks,
             face_buffer,
             index_buffer,
             face_count: faces.len() as u32,
@@ -77,15 +90,39 @@ impl Chunk {
         let block_amount = Self::CHUNK_WIDTH * Self::CHUNK_LENGTH * Self::CHUNK_HEIGHT;
         let mut blocks = Vec::with_capacity(block_amount);
 
-        for _ in 0..(block_amount / 2) {
+        println!(
+            "Creating {} blocks of stone",
+            Self::CHUNK_WIDTH * Self::CHUNK_LENGTH * 10
+        );
+        for _ in 0..Self::CHUNK_WIDTH * Self::CHUNK_LENGTH * 10 {
+            blocks.push(Voxel::new(3));
+        }
+
+        println!(
+            "Creating {} blocks of dirt",
+            Self::CHUNK_WIDTH * Self::CHUNK_LENGTH * 5
+        );
+        for _ in 0..Self::CHUNK_WIDTH * Self::CHUNK_LENGTH * 5 {
             blocks.push(Voxel::new(1));
         }
 
-        for _ in (block_amount / 2)..block_amount {
+        println!(
+            "Creating {} blocks of grass",
+            Self::CHUNK_WIDTH * Self::CHUNK_LENGTH
+        );
+        for _ in 0..Self::CHUNK_WIDTH * Self::CHUNK_LENGTH {
+            blocks.push(Voxel::new(2));
+        }
+
+        print!(
+            "Creating {} blocks of air",
+            Self::CHUNK_WIDTH * Self::CHUNK_LENGTH * 16
+        );
+        for _ in 0..Self::CHUNK_WIDTH * Self::CHUNK_LENGTH * 16 {
             blocks.push(Voxel::new(0));
         }
 
-        let faces = Self::get_faces();
+        let faces = Self::get_faces(&blocks);
         let face_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Face Buffer of Chunk"),
             contents: bytemuck::cast_slice(&faces),
@@ -100,7 +137,7 @@ impl Chunk {
         });
 
         Self {
-            blocks,
+            voxels: blocks,
             face_buffer,
             index_buffer,
             face_count: faces.len() as u32,
@@ -109,32 +146,37 @@ impl Chunk {
 
     /// Get faces. First only default implementation, later generate from
     /// blocks
-    fn get_faces() -> Vec<Face> {
-        let size = Self::CHUNK_WIDTH * Self::CHUNK_LENGTH;
-        let mut faces = Vec::with_capacity(size);
+    fn get_faces(voxels: &Vec<Voxel>) -> Vec<Face> {
+        let mut faces = Vec::new();
         for x in 0..Self::CHUNK_WIDTH {
-            for z in 0..Self::CHUNK_LENGTH {
-                faces.push(Face {
-                    location: [x as u8, 0, z as u8],
-                    direction: FACE_TOP,
-                    block_id: 1,
-                    _padding: [0; 3],
-                });
+            for y in 0..Self::CHUNK_HEIGHT {
+                for z in 0..Self::CHUNK_LENGTH {
+                    // If the block is air, skip it
+                    let voxel_id = voxels[Self::index(x, y, z)].id;
+                    if voxel_id == 0 {
+                        continue;
+                    }
+
+                    let location = [x as u8, y as u8, z as u8];
+                    for direction in 0..6 {
+                        faces.push(Face::new(location, direction, voxel_id));
+                    }
+                }
             }
         }
         faces
     }
 
     fn index(x: usize, y: usize, z: usize) -> usize {
-        x + Self::CHUNK_WIDTH * (y + Self::CHUNK_LENGTH * z)
+        x + Self::CHUNK_WIDTH * (z + Self::CHUNK_LENGTH * y)
     }
 
     pub fn get(&self, x: usize, y: usize, z: usize) -> Voxel {
-        self.blocks[Self::index(x, y, z)]
+        self.voxels[Self::index(x, y, z)]
     }
 
     pub fn set(&mut self, block: Voxel, x: usize, y: usize, z: usize) {
-        self.blocks[Self::index(x, y, z)] = block;
+        self.voxels[Self::index(x, y, z)] = block;
     }
 
     pub fn get_face_buffer(&self) -> &wgpu::Buffer {

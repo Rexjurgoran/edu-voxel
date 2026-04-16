@@ -211,7 +211,7 @@ fn create_render_pipeline(
             topology,
             strip_index_format: None,
             front_face: wgpu::FrontFace::Ccw,
-            cull_mode: Some(wgpu::Face::Back),
+            cull_mode: None, //Some(wgpu::Face::Back),
             // Setting this to anything other than Fill requires Features::NON_FILL_POLYGON_MODE
             polygon_mode: wgpu::PolygonMode::Fill,
             // Requires Features::DEPTH_CLIP_CONTROL
@@ -612,7 +612,7 @@ impl State {
         };
 
         let texture = resources::load_texture("block_atlas.png", false, &device, &queue).await?;
-        let normal = resources::load_texture("normal16.png", true, &device, &queue).await?;
+        let normal = resources::load_texture("flat_normal_map.png", true, &device, &queue).await?;
         let texture_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("texture_bind_group"),
             layout: &texture_bind_group_layout,
@@ -799,7 +799,7 @@ impl State {
             render_pass.set_bind_group(2, &self.light_bind_group, &[]);
             render_pass.set_bind_group(3, &self.environment_bind_group, &[]);
             render_pass.set_bind_group(4, &self.face_bind_group, &[]);
-            println!("Face count: {}", self.chunk.face_count);
+            //println!("Face count: {}", self.chunk.face_count);
             render_pass.draw(0..self.chunk.face_count * 6, 0..1);
         }
 

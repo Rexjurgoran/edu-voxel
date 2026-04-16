@@ -3,6 +3,30 @@ const TILES_PER_ROW: f32 = 2.0;
 const TILES_PER_COLUMN: f32 = 2.0;
 const TILE_WIDTH: f32 = 1.0 / TILES_PER_ROW;
 const TILE_HEIGHT: f32 = 1.0 / TILES_PER_COLUMN;
+const NORMALS = array<vec3<f32>, 6>(
+    vec3<f32>( 1, 0, 0),
+    vec3<f32>(-1, 0, 0),
+    vec3<f32>( 0, 1, 0),
+    vec3<f32>( 0,-1, 0),
+    vec3<f32>( 0, 0, 1),
+    vec3<f32>( 0, 0,-1),
+);
+const TANGENTS = array<vec3<f32>, 6>(
+    vec3<f32>(0,0,1),
+    vec3<f32>(0,0,1),
+    vec3<f32>(1,0,0),
+    vec3<f32>(1,0,0),
+    vec3<f32>(1,0,0),
+    vec3<f32>(1,0,0),
+);
+const BITANGENTS = array<vec3<f32>, 6>(
+    vec3<f32>(0,1,0),
+    vec3<f32>(0,1,0),
+    vec3<f32>(0,0,1),
+    vec3<f32>(0,0,1),
+    vec3<f32>(0,1,0),
+    vec3<f32>(0,1,0),
+);
 
 // Structs
 struct Camera {
@@ -54,17 +78,21 @@ fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
 
     // Unpack face and match normals from direction
     let face = unpack_face(faces[face_index]);
-    let normal = face_normal(face.direction);
-    let tangent = face_tangent(face.direction);
-    let bitangent = cross(normal, tangent);
+    let normal = NORMALS[face.direction];
+    let tangent = TANGENTS[face.direction];
+    let bitangent = BITANGENTS[face.direction];
 
     // Get position of the vertex by adding the corner offset to the face location
     let corner_index = get_corner_index(vertex_index % 6u);
     let corner_offset = get_corner_offset(corner_index);
+
+    // Get offset from the center of the voxel to the face plane
+    // 0 for even directions (top, right, back), 1 for odd directions (bottom, left, front)
+    let face_offset = select(0.0, 1.0, face.direction % 2u == 0u); 
     let position = face.location 
         + tangent * corner_offset.x
         + bitangent * corner_offset.y
-        + normal * 0.5; // Move the vertex from voxel center to the face plane
+        + normal * face_offset;
 
     var out: VertexOutput;
     out.clip_position = camera.view_proj * vec4<f32>(position, 1.0);
@@ -86,48 +114,26 @@ fn unpack_face(face: Face) -> UnpackedFace {
     let dir = u32((face.data0 >> 24) & 0xFFu);
     let block_id = u32(face.data1 & 0xFFu); // Extract the lower 8 bits for block ID
     let uv_offset = vec2<f32>(f32(
-        block_id % 32u) * TILE_WIDTH, // Calculate the x offset in the texture atlas
-        f32(block_id / 32u) * TILE_HEIGHT); // Calculate the y offset in the texture atlas
+        block_id % 2u) * TILE_WIDTH, // Calculate the x offset in the texture atlas
+        f32(block_id / 2u) * TILE_HEIGHT); // Calculate the y offset in the texture atlas
     return UnpackedFace(vec3<f32>(x, y, z), dir, uv_offset);
 }
 
-// Each face direction corresponds to a specific tangent vector
-// Directions are defined in entity.rs as constants for better readability
-fn face_tangent(direction: u32) -> vec3<f32> {
-    switch (direction) {
-        case 1u: { return vec3<f32>(1, 0, 0); } // Top
-        case 2u: { return vec3<f32>(1, 0, 0); } // Front
-        case 3u: { return vec3<f32>(0, 0, -1); } // Right
-        case 4u: { return vec3<f32>(0, 0, 1); } // Left
-        case 5u: { return vec3<f32>(1, 0, 0); } // Back
-        default: { return vec3<f32>(1, 0, 0); } // Bottom
-    }
-}
-
-// Each face direction corresponds to a specific normal vector
-// Directions are defined in entity.rs as constants for better readability
-fn face_normal(direction: u32) -> vec3<f32> {
-    switch (direction) {
-        case 1u: { return vec3<f32>(0, 1, 0); } // Top
-        case 2u: { return vec3<f32>(0, 0, 1); } // Front
-        case 3u: { return vec3<f32>(1, 0, 0); } // Right
-        case 4u: { return vec3<f32>(-1, 0, 0); } // Left
-        case 5u: { return vec3<f32>(0, 0, -1); } // Back
-        default: { return vec3<f32>(0, -1, 0); } // Bottom
-    }
-}
-
 // Map the vertex index to the corresponding corner of the face
+// 3 --- 2
+// |   / |
+// | /   |
+// 0 --- 1
 fn get_corner_index(face_vertex: u32) -> u32 {
     switch (face_vertex) {
         // First triangle
-        case 0u: { return 0u; } // Bottom-left
-        case 1u: { return 1u; } // Bottom-right
-        case 2u: { return 2u; } // Top-right
+        case 0u: { return 0u; }
+        case 1u: { return 1u; }
+        case 2u: { return 2u; }
         // Second triangle
-        case 3u: { return 0u; } // Bottom-left
-        case 4u: { return 2u; } // Top-right
-        default: { return 3u; } // Top-left
+        case 3u: { return 2u; }
+        case 4u: { return 3u; }
+        default: { return 0u; }
     }
 }
 
@@ -197,4 +203,5 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let result = (diffuse_color + specular_color) * object_color.xyz + reflection * shininess;
 
     return vec4<f32>(result, object_color.a);
+    //return vec4<f32>(world_normal, 1.0); // Visualize normals for debugging
 }
