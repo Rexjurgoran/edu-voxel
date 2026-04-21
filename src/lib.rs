@@ -1,4 +1,3 @@
-use crate::model::DrawModel;
 use crate::model::Vertex;
 mod camera;
 mod entity;
@@ -7,7 +6,7 @@ mod model;
 mod resources;
 mod texture;
 
-use std::{f32::consts::PI, sync::Arc};
+use std::{collections::VecDeque, f32::consts::PI, fmt::format, sync::Arc};
 
 use cgmath::prelude::*;
 use texture::Texture;
@@ -19,8 +18,6 @@ use winit::{
     keyboard::{KeyCode, PhysicalKey},
     window::Window,
 };
-
-use crate::model::{DrawLight, Model};
 
 const NUM_INSTANCES_PER_ROW: u32 = 10;
 
@@ -772,23 +769,6 @@ impl State {
                 timestamp_writes: None,
             });
 
-            // render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
-            // render_pass.set_pipeline(&self.light_render_pipeline);
-            // render_pass.draw_light_model(
-            //     &self.obj_model,
-            //     &self.camera_bind_group,
-            //     &self.light_bind_group,
-            // );
-
-            // render_pass.set_pipeline(&self.render_pipeline);
-            // render_pass.draw_model_instanced(
-            //     &self.obj_model,
-            //     0..self.instances.len() as u32,
-            //     &self.camera_bind_group,
-            //     &self.light_bind_group,
-            //     &self.environment_bind_group,
-            // );
-
             // Render the skybox first so that it will be in the background of everything else
             render_pass.set_pipeline(&self.sky_pipeline);
             render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
@@ -818,6 +798,7 @@ impl State {
 pub struct App {
     state: Option<State>,
     last_time: instant::Instant,
+    frame_times: VecDeque<f64>,
 }
 
 impl App {
@@ -825,6 +806,7 @@ impl App {
         Self {
             state: None,
             last_time: instant::Instant::now(),
+            frame_times: VecDeque::new(),
         }
     }
 }
@@ -890,6 +872,21 @@ impl ApplicationHandler<State> for App {
             WindowEvent::RedrawRequested => {
                 let dt = self.last_time.elapsed();
                 self.last_time = instant::Instant::now();
+
+                // Add new frame time, drop anything older than 1 second
+                self.frame_times.push_back(dt.as_secs_f64());
+                while self.frame_times.iter().sum::<f64>() > 1.0 {
+                    self.frame_times.pop_front();
+                }
+
+                let total_time = self.frame_times.iter().sum::<f64>();
+                let fps = self.frame_times.len() as f64 / total_time;
+                let avg_ms = (total_time / self.frame_times.len() as f64) * 1000.0;
+
+                state
+                    .window
+                    .set_title(&format!("FPS: {:.0}  |  {:.2} ms", fps, avg_ms));
+
                 state.update(dt);
                 match state.render() {
                     Ok(_) => {}
