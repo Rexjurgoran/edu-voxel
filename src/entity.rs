@@ -158,8 +158,29 @@ impl Chunk {
                     }
 
                     let location = [x as u8, y as u8, z as u8];
-                    for direction in 0..6 {
-                        faces.push(Face::new(location, direction, voxel_id));
+
+                    if x == 0 || voxels[Self::index(x - 1, y, z)].id == 0 {
+                        faces.push(Face::new(location, FACE_LEFT, voxel_id));
+                    }
+
+                    if x == Self::CHUNK_WIDTH - 1 || voxels[Self::index(x + 1, y, z)].id == 0 {
+                        faces.push(Face::new(location, FACE_RIGHT, voxel_id));
+                    }
+
+                    if y == 0 || voxels[Self::index(x, y - 1, z)].id == 0 {
+                        faces.push(Face::new(location, FACE_BOTTOM, voxel_id));
+                    }
+
+                    if y == Self::CHUNK_HEIGHT - 1 || voxels[Self::index(x, y + 1, z)].id == 0 {
+                        faces.push(Face::new(location, FACE_TOP, voxel_id));
+                    }
+
+                    if z == 0 || voxels[Self::index(x, y, z - 1)].id == 0 {
+                        faces.push(Face::new(location, FACE_BACK, voxel_id));
+                    }
+
+                    if z == Self::CHUNK_LENGTH - 1 || voxels[Self::index(x, y, z + 1)].id == 0 {
+                        faces.push(Face::new(location, FACE_FRONT, voxel_id));
                     }
                 }
             }
