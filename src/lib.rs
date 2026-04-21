@@ -308,12 +308,13 @@ impl State {
         let texture_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 entries: &[
+                    // binding 0 - diffuse texture
                     wgpu::BindGroupLayoutEntry {
                         binding: 0,
                         visibility: wgpu::ShaderStages::FRAGMENT,
                         ty: wgpu::BindingType::Texture {
                             multisampled: false,
-                            view_dimension: wgpu::TextureViewDimension::D2,
+                            view_dimension: wgpu::TextureViewDimension::D2Array,
                             sample_type: wgpu::TextureSampleType::Float { filterable: true },
                         },
                         count: None,
@@ -444,11 +445,6 @@ impl State {
             }],
             label: Some("camera_bind_group"),
         });
-
-        let obj_model =
-            resources::load_model("cube.obj", &device, &queue, &texture_bind_group_layout)
-                .await
-                .unwrap();
 
         let light_uniform = LightUniform {
             position: [2.0, 2.0, 2.0],
@@ -611,7 +607,14 @@ impl State {
             )
         };
 
-        let texture = resources::load_texture("block_atlas.png", false, &device, &queue).await?;
+        let texture = resources::load_texture_array(
+            &["dirt.png", "grass.png", "stone.png"],
+            &device,
+            &queue,
+            16,
+            16,
+        )
+        .await?;
         let normal = resources::load_texture("flat_normal_map.png", true, &device, &queue).await?;
         let texture_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("texture_bind_group"),

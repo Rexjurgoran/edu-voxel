@@ -44,6 +44,7 @@ struct UnpackedFace {
     location: vec3<f32>,
     direction: u32,
     uv_offset: vec2<f32>, // top-left corner of the face in the texture atlas
+    block_id: u32,
 }
 @group(1) @binding(0)
 var<uniform> camera: Camera;
@@ -66,6 +67,7 @@ struct VertexOutput {
     @location(3) world_normal: vec3<f32>,
     @location(4) world_tangent: vec3<f32>,
     @location(5) world_bitangent: vec3<f32>,
+    @location(6) block_id: u32,
 };
 
 // Vertex shader runs once per vertex to determine the position of the vertex 
@@ -102,6 +104,7 @@ fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
     out.world_tangent = tangent;
     out.world_bitangent = bitangent;
     out.world_view_position = camera.view_pos.xyz;
+    out.block_id = face.block_id;
     return out;
 }
 
@@ -116,7 +119,7 @@ fn unpack_face(face: Face) -> UnpackedFace {
     let uv_offset = vec2<f32>(f32(
         block_id % 2u) * TILE_WIDTH, // Calculate the x offset in the texture atlas
         f32(block_id / 2u) * TILE_HEIGHT); // Calculate the y offset in the texture atlas
-    return UnpackedFace(vec3<f32>(x, y, z), dir, uv_offset);
+    return UnpackedFace(vec3<f32>(x, y, z), dir, uv_offset, block_id);
 }
 
 // Map the vertex index to the corresponding corner of the face
@@ -147,10 +150,8 @@ fn get_corner_offset(corner_index: u32) -> vec2<f32> {
     }
 }
 
-@group(0) @binding(0)
-var t_diffuse: texture_2d<f32>;
-@group(0)@binding(1)
-var s_diffuse: sampler;
+@group(0) @binding(0) var t_diffuse: texture_2d_array<f32>;
+@group(0) @binding(1) var s_diffuse: sampler;
 @group(0)@binding(2)
 var t_normal: texture_2d<f32>;
 @group(0) @binding(3)
@@ -166,7 +167,7 @@ var env_sampler: sampler;
 // Fragment shader runs once per pixel to determine the final color of the pixel
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    let object_color: vec4<f32> = textureSample(t_diffuse, s_diffuse, in.tex_coords);
+    let object_color: vec4<f32> = textureSample(t_diffuse, s_diffuse, in.tex_coords, in.block_id - 1u);
     let object_normal: vec4<f32> = textureSample(t_normal, s_normal, in.tex_coords);
 
     // Adjust the tangent and bitangent using the Gramm-Schmidt process
@@ -190,7 +191,8 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let half_dir = normalize(view_dir + light_dir);
 
     let diffuse_strength = max(dot(world_normal, light_dir), 0.0);
-    let diffuse_color = light.color * diffuse_strength;
+    //let diffuse_color = light.color * diffuse_strength;
+    let diffuse_color = light.color;
 
     let specular_strength = pow(max(dot(world_normal, half_dir), 0.0), 32.0);
     let specular_color = specular_strength * light.color;

@@ -1,5 +1,5 @@
 [package]
-name = "edu-wgpu"
+name = "edu-voxel"
 version = "0.1.0"
 edition = "2024"
 
