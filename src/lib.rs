@@ -1,4 +1,3 @@
-use crate::model::Vertex;
 mod camera;
 mod entity;
 mod hdr;
@@ -6,7 +5,7 @@ mod model;
 mod resources;
 mod texture;
 
-use std::{collections::VecDeque, f32::consts::PI, fmt::format, sync::Arc};
+use std::{collections::VecDeque, f32::consts::PI, sync::Arc};
 
 use cgmath::prelude::*;
 use texture::Texture;
@@ -18,8 +17,6 @@ use winit::{
     keyboard::{KeyCode, PhysicalKey},
     window::Window,
 };
-
-const NUM_INSTANCES_PER_ROW: u32 = 10;
 
 #[repr(C)]
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
@@ -51,22 +48,6 @@ impl CameraUniform {
         self.view_proj = view_proj.into();
         self.inv_proj = proj.invert().unwrap().into();
         self.inv_view = view.transpose().into();
-    }
-}
-
-struct Instance {
-    position: cgmath::Vector3<f32>,
-    rotation: cgmath::Quaternion<f32>,
-}
-
-impl Instance {
-    fn to_raw(&self) -> InstanceRaw {
-        let model =
-            cgmath::Matrix4::from_translation(self.position) * cgmath::Matrix4::from(self.rotation);
-        InstanceRaw {
-            model: model.into(),
-            normal: cgmath::Matrix3::from(self.rotation).into(),
-        }
     }
 }
 
@@ -157,16 +138,12 @@ struct State {
     camera_uniform: CameraUniform,
     camera_buffer: wgpu::Buffer,
     camera_bind_group: wgpu::BindGroup,
-    // instances: Vec<Instance>,
-    // instance_buffer: wgpu::Buffer,
     face_bind_group: wgpu::BindGroup,
     depth_texture: Texture,
-    // obj_model: Model,
     chunk: entity::Chunk,
     light_uniform: LightUniform,
     light_buffer: wgpu::Buffer,
     light_bind_group: wgpu::BindGroup,
-    light_render_pipeline: wgpu::RenderPipeline,
     mouse_pressed: bool,
     hdr: hdr::HdrPipeline,
     environment_bind_group: wgpu::BindGroup,
@@ -359,40 +336,7 @@ impl State {
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
 
-        const SPACE_BETWEEN: f32 = 3.0;
-
-        let instances = (0..NUM_INSTANCES_PER_ROW)
-            .flat_map(|z| {
-                (0..NUM_INSTANCES_PER_ROW).map(move |x| {
-                    let x = SPACE_BETWEEN * (x as f32 - NUM_INSTANCES_PER_ROW as f32 / 2.0);
-                    let z = SPACE_BETWEEN * (z as f32 - NUM_INSTANCES_PER_ROW as f32 / 2.0);
-
-                    let position = cgmath::Vector3 { x, y: 0.0, z };
-
-                    let rotation = if position.is_zero() {
-                        // this is needed so an object at (0, 0, 0) won't get scaled to zero
-                        // as Quaternions can affect scle if they're not created correctly
-                        cgmath::Quaternion::from_axis_angle(
-                            cgmath::Vector3::unit_z(),
-                            cgmath::Deg(0.0),
-                        )
-                    } else {
-                        cgmath::Quaternion::from_axis_angle(position.normalize(), cgmath::Deg(45.0))
-                    };
-
-                    Instance { position, rotation }
-                })
-            })
-            .collect::<Vec<_>>();
-
-        let instance_data = instances.iter().map(Instance::to_raw).collect::<Vec<_>>();
-        let instance_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Instance Buffer"),
-            contents: bytemuck::cast_slice(&instance_data),
-            usage: wgpu::BufferUsages::VERTEX,
-        });
-
-        let chunk = entity::Chunk::half(&device);
+        let chunk = entity::Chunk::half(&device, [0, 0]);
 
         // Create the bind group layout for the faces of the chunk
         let face_bind_group_layout =
@@ -583,27 +527,6 @@ impl State {
             )
         };
 
-        let light_render_pipeline = {
-            let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("Light Pipeline Layout"),
-                bind_group_layouts: &[&camera_bind_group_layout, &light_bind_group_layout],
-                push_constant_ranges: &[],
-            });
-            let shader = wgpu::ShaderModuleDescriptor {
-                label: Some("Light Shader"),
-                source: wgpu::ShaderSource::Wgsl(include_str!("light.wgsl").into()),
-            };
-            create_render_pipeline(
-                &device,
-                &layout,
-                hdr.format(),
-                Some(texture::Texture::DEPTH_FORMAT),
-                &[model::ModelVertex::desc()],
-                wgpu::PrimitiveTopology::TriangleList,
-                shader,
-            )
-        };
-
         let texture = resources::load_texture_array(
             &["dirt.png", "grass.png", "stone.png"],
             &device,
@@ -650,16 +573,12 @@ impl State {
             camera_uniform,
             camera_buffer,
             camera_bind_group,
-            // instances,
-            // instance_buffer,
             face_bind_group,
             depth_texture,
-            // obj_model,
             chunk,
             light_buffer,
             light_uniform,
             light_bind_group,
-            light_render_pipeline,
             mouse_pressed: false,
             hdr,
             environment_bind_group,

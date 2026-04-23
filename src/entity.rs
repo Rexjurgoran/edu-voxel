@@ -45,11 +45,9 @@ impl Face {
 
 /// Chunk consisting of blocks
 pub struct Chunk {
-    voxels: Vec<Voxel>,
+    location: [u8; 2], // Location of the chunk in the world (x, z)
     // Faces I want to render
     face_buffer: wgpu::Buffer,
-    // Make vertices reusable
-    index_buffer: wgpu::Buffer,
     pub face_count: u32,
 }
 impl Chunk {
@@ -70,23 +68,15 @@ impl Chunk {
             usage: wgpu::BufferUsages::STORAGE,
         });
 
-        let indeces: Vec<u32> = vec![0, 1, 2, 2, 3, 0];
-        let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Index Buffer of Chunk"),
-            contents: bytemuck::cast_slice(&indeces),
-            usage: wgpu::BufferUsages::INDEX,
-        });
-
         Self {
-            voxels: blocks,
+            location: [0, 0],
             face_buffer,
-            index_buffer,
             face_count: faces.len() as u32,
         }
     }
 
     // Create a new chunk with half of the blocks set to 1 and the other half set to 0
-    pub fn half(device: &wgpu::Device) -> Self {
+    pub fn half(device: &wgpu::Device, location: [u8; 2]) -> Self {
         let block_amount = Self::CHUNK_WIDTH * Self::CHUNK_LENGTH * Self::CHUNK_HEIGHT;
         let mut blocks = Vec::with_capacity(block_amount);
 
@@ -129,17 +119,9 @@ impl Chunk {
             usage: wgpu::BufferUsages::STORAGE,
         });
 
-        let indeces: Vec<u32> = vec![0, 1, 2, 2, 3, 0];
-        let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Index Buffer of Chunk"),
-            contents: bytemuck::cast_slice(&indeces),
-            usage: wgpu::BufferUsages::INDEX,
-        });
-
         Self {
-            voxels: blocks,
+            location,
             face_buffer,
-            index_buffer,
             face_count: faces.len() as u32,
         }
     }
@@ -192,14 +174,6 @@ impl Chunk {
         x + Self::CHUNK_WIDTH * (z + Self::CHUNK_LENGTH * y)
     }
 
-    pub fn get(&self, x: usize, y: usize, z: usize) -> Voxel {
-        self.voxels[Self::index(x, y, z)]
-    }
-
-    pub fn set(&mut self, block: Voxel, x: usize, y: usize, z: usize) {
-        self.voxels[Self::index(x, y, z)] = block;
-    }
-
     pub fn get_face_buffer(&self) -> &wgpu::Buffer {
         &self.face_buffer
     }
@@ -211,10 +185,22 @@ pub struct World {
 }
 impl World {
     pub fn new(device: &wgpu::Device) -> Self {
-        let chunks = (0..Self::WORLD_WIDTH * Self::WORLD_LENGTH)
-            .map(|_| Chunk::half(device))
-            .collect();
+        let mut chunks = Vec::new();
+        for x in 0..Self::WORLD_WIDTH {
+            for z in 0..Self::WORLD_LENGTH {
+                let chunk = Chunk::half(device, [x as u8, z as u8]);
+                chunks.push(chunk);
+            }
+        }
         Self { chunks }
+    }
+
+    fn index(x: usize, z: usize) -> usize {
+        x + Self::WORLD_WIDTH * z
+    }
+
+    pub fn get_chunk(&self, x: usize, z: usize) -> &Chunk {
+        &self.chunks[Self::index(x, z)]
     }
 
     const WORLD_WIDTH: usize = 16;
