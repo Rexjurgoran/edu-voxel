@@ -18,6 +18,8 @@ use winit::{
     window::Window,
 };
 
+use crate::entity::World;
+
 #[repr(C)]
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 struct CameraUniform {
@@ -138,9 +140,8 @@ struct State {
     camera_uniform: CameraUniform,
     camera_buffer: wgpu::Buffer,
     camera_bind_group: wgpu::BindGroup,
-    face_bind_group: wgpu::BindGroup,
     depth_texture: Texture,
-    chunk: entity::Chunk,
+    world: entity::World,
     light_uniform: LightUniform,
     light_buffer: wgpu::Buffer,
     light_bind_group: wgpu::BindGroup,
@@ -244,9 +245,10 @@ impl State {
         let (device, queue) = adapter
             .request_device(&wgpu::DeviceDescriptor {
                 label: None,
-                required_features: wgpu::Features::empty(),
+                required_features: wgpu::Features::PUSH_CONSTANTS,
                 required_limits: wgpu::Limits {
                     max_bind_groups: 5,
+                    max_push_constant_size: 8,
                     ..wgpu::Limits::downlevel_defaults()
                 },
                 memory_hints: Default::default(),
@@ -336,8 +338,6 @@ impl State {
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
 
-        let chunk = entity::Chunk::half(&device, [0, 0]);
-
         // Create the bind group layout for the faces of the chunk
         let face_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -354,14 +354,7 @@ impl State {
                 label: Some("face_bind_group_layout"),
             });
 
-        let face_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &face_bind_group_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: chunk.get_face_buffer().as_entire_binding(),
-            }],
-            label: Some("face_bind_group"),
-        });
+        let world = entity::World::new(&device, &face_bind_group_layout);
 
         let camera_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -508,7 +501,10 @@ impl State {
                     &environment_layout,      // Cubemap for reflections
                     &face_bind_group_layout,  // Face positions and directions to generate vertices
                 ],
-                push_constant_ranges: &[],
+                push_constant_ranges: &[wgpu::PushConstantRange {
+                    stages: wgpu::ShaderStages::VERTEX,
+                    range: 0..8,
+                }],
             });
 
         let render_pipeline = {
@@ -573,9 +569,8 @@ impl State {
             camera_uniform,
             camera_buffer,
             camera_bind_group,
-            face_bind_group,
             depth_texture,
-            chunk,
+            world,
             light_buffer,
             light_uniform,
             light_bind_group,
@@ -700,9 +695,17 @@ impl State {
             render_pass.set_bind_group(1, &self.camera_bind_group, &[]);
             render_pass.set_bind_group(2, &self.light_bind_group, &[]);
             render_pass.set_bind_group(3, &self.environment_bind_group, &[]);
-            render_pass.set_bind_group(4, &self.face_bind_group, &[]);
-            //println!("Face count: {}", self.chunk.face_count);
-            render_pass.draw(0..self.chunk.face_count * 6, 0..1);
+            for (i, chunk) in self.world.chunks.iter().enumerate() {
+                let chunk_x = (i % World::WORLD_WIDTH) as i32;
+                let chunk_z = (i / World::WORLD_WIDTH) as i32;
+                render_pass.set_push_constants(
+                    wgpu::ShaderStages::VERTEX,
+                    0,
+                    bytemuck::bytes_of(&[chunk_x, chunk_z]),
+                );
+                render_pass.set_bind_group(4, &chunk.face_bind_group, &[]);
+                render_pass.draw(0..chunk.face_count * 6, 0..1);
+            }
         }
 
         self.hdr.process(&mut encoder, &view);

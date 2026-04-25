@@ -3,6 +3,8 @@ const TILES_PER_ROW: f32 = 2.0;
 const TILES_PER_COLUMN: f32 = 2.0;
 const TILE_WIDTH: f32 = 1.0 / TILES_PER_ROW;
 const TILE_HEIGHT: f32 = 1.0 / TILES_PER_COLUMN;
+const CHUNK_WIDTH: f32 = 16.0;
+const CHUNK_LENGTH: f32 = 16.0;
 const NORMALS = array<vec3<f32>, 6>(
     vec3<f32>( 1, 0, 0),
     vec3<f32>(-1, 0, 0),
@@ -46,6 +48,13 @@ struct UnpackedFace {
     uv_offset: vec2<f32>, // top-left corner of the face in the texture atlas
     block_id: u32,
 }
+struct ChunkOffset {
+    x: i32,
+    z: i32,
+}
+
+var<push_constant> chunk_offset: ChunkOffset;
+
 @group(1) @binding(0)
 var<uniform> camera: Camera;
 
@@ -90,11 +99,13 @@ fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
 
     // Get offset from the center of the voxel to the face plane
     // 0 for even directions (top, right, back), 1 for odd directions (bottom, left, front)
-    let face_offset = select(0.0, 1.0, face.direction % 2u == 0u); 
+    let face_offset = select(0.0, 1.0, face.direction % 2u == 0u);
+    let chunk_world_offset = vec3<f32>(f32(chunk_offset.x) * f32(CHUNK_WIDTH), 0.0, f32(chunk_offset.z) * f32(CHUNK_LENGTH));
     let position = face.location 
         + tangent * corner_offset.x
         + bitangent * corner_offset.y
-        + normal * face_offset;
+        + normal * face_offset
+        + chunk_world_offset;
 
     var out: VertexOutput;
     out.clip_position = camera.view_proj * vec4<f32>(position, 1.0);

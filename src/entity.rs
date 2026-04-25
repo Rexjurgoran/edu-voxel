@@ -48,6 +48,7 @@ pub struct Chunk {
     location: [u8; 2], // Location of the chunk in the world (x, z)
     // Faces I want to render
     face_buffer: wgpu::Buffer,
+    pub(crate) face_bind_group: wgpu::BindGroup,
     pub face_count: u32,
 }
 impl Chunk {
@@ -56,27 +57,8 @@ impl Chunk {
     const CHUNK_LENGTH: usize = 16;
     const CHUNK_HEIGHT: usize = 32;
 
-    // Create a new chunk with all blocks set to 0
-    pub fn new(device: &wgpu::Device) -> Self {
-        let blocks =
-            vec![Voxel::new(0); Self::CHUNK_WIDTH * Self::CHUNK_LENGTH * Self::CHUNK_HEIGHT];
-
-        let faces = Self::get_faces(&blocks);
-        let face_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Face Buffer of Chunk"),
-            contents: bytemuck::cast_slice(&faces),
-            usage: wgpu::BufferUsages::STORAGE,
-        });
-
-        Self {
-            location: [0, 0],
-            face_buffer,
-            face_count: faces.len() as u32,
-        }
-    }
-
     // Create a new chunk with half of the blocks set to 1 and the other half set to 0
-    pub fn half(device: &wgpu::Device, location: [u8; 2]) -> Self {
+    pub fn half(device: &wgpu::Device, location: [u8; 2], layout: &wgpu::BindGroupLayout) -> Self {
         let block_amount = Self::CHUNK_WIDTH * Self::CHUNK_LENGTH * Self::CHUNK_HEIGHT;
         let mut blocks = Vec::with_capacity(block_amount);
 
@@ -119,10 +101,20 @@ impl Chunk {
             usage: wgpu::BufferUsages::STORAGE,
         });
 
+        let face_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: face_buffer.as_entire_binding(),
+            }],
+            label: Some("face_bind_group"),
+        });
+
         Self {
             location,
             face_buffer,
             face_count: faces.len() as u32,
+            face_bind_group,
         }
     }
 
@@ -181,14 +173,14 @@ impl Chunk {
 
 /// World consisting of chunks
 pub struct World {
-    chunks: Vec<Chunk>,
+    pub(crate) chunks: Vec<Chunk>,
 }
 impl World {
-    pub fn new(device: &wgpu::Device) -> Self {
+    pub fn new(device: &wgpu::Device, face_bind_group_layout: &wgpu::BindGroupLayout) -> Self {
         let mut chunks = Vec::new();
         for x in 0..Self::WORLD_WIDTH {
             for z in 0..Self::WORLD_LENGTH {
-                let chunk = Chunk::half(device, [x as u8, z as u8]);
+                let chunk = Chunk::half(device, [x as u8, z as u8], face_bind_group_layout);
                 chunks.push(chunk);
             }
         }
@@ -203,6 +195,6 @@ impl World {
         &self.chunks[Self::index(x, z)]
     }
 
-    const WORLD_WIDTH: usize = 16;
-    const WORLD_LENGTH: usize = 16;
+    pub const WORLD_WIDTH: usize = 16;
+    pub const WORLD_LENGTH: usize = 16;
 }
