@@ -1,15 +1,7 @@
 use std::{f32::consts::FRAC_PI_2, time::Duration};
 
-use cgmath::{InnerSpace, Matrix4, Point3, Rad, Vector3, perspective};
+use cgmath::{InnerSpace, Matrix4, Point3, Rad, Vector3};
 use winit::{dpi::PhysicalPosition, event::MouseScrollDelta, keyboard::KeyCode};
-
-#[rustfmt::skip]
-pub const OPENGL_TO_WGPU_MATRIX: cgmath::Matrix4<f32> = cgmath::Matrix4::from_cols(  
-    cgmath::Vector4::new(1.0,  0.0,  0.0, 0.0),  
-    cgmath::Vector4::new(0.0,  1.0,  0.0, 0.0),  
-    cgmath::Vector4::new(0.0,  0.0, -0.5, 0.0), // negated z scale  
-    cgmath::Vector4::new(0.0,  0.0,  0.5, 1.0), // same z offset  
-);
 
 const SAFE_FRAC_PI_2: f32 = FRAC_PI_2 - 0.0001;
 
@@ -50,16 +42,14 @@ pub struct Projection {
     aspect: f32,
     fovy: Rad<f32>,
     znear: f32,
-    zfar: f32,
 }
 
 impl Projection {
-    pub fn new<F: Into<Rad<f32>>>(width: u32, height: u32, fovy: F, znear: f32, zfar: f32) -> Self {
+    pub fn new<F: Into<Rad<f32>>>(width: u32, height: u32, fovy: F, znear: f32) -> Self {
         Self {
             aspect: width as f32 / height as f32,
             fovy: fovy.into(),
             znear,
-            zfar,
         }
     }
 
@@ -68,7 +58,26 @@ impl Projection {
     }
 
     pub fn calc_matrix(&self) -> Matrix4<f32> {
-        OPENGL_TO_WGPU_MATRIX * perspective(self.fovy, self.aspect, self.znear, self.zfar)
+        let f = 1.0 / (self.fovy.0 * 0.5).tan();
+
+        Matrix4::new(
+            f / self.aspect,
+            0.0,
+            0.0,
+            0.0, // col 0
+            0.0,
+            f,
+            0.0,
+            0.0, // col 1
+            0.0,
+            0.0,
+            0.0,
+            -1.0, // col 2
+            0.0,
+            0.0,
+            self.znear,
+            0.0, // col 3
+        )
     }
 }
 
