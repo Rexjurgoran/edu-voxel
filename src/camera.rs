@@ -4,11 +4,11 @@ use cgmath::{InnerSpace, Matrix4, Point3, Rad, Vector3, perspective};
 use winit::{dpi::PhysicalPosition, event::MouseScrollDelta, keyboard::KeyCode};
 
 #[rustfmt::skip]
-pub const OPENGL_TO_WGPU_MATRIX: cgmath::Matrix4<f32> = cgmath::Matrix4::from_cols(
-    cgmath::Vector4::new(1.0, 0.0, 0.0, 0.0),
-    cgmath::Vector4::new(0.0, 1.0, 0.0, 0.0),
-    cgmath::Vector4::new(0.0, 0.0, 0.5, 0.0),
-    cgmath::Vector4::new(0.0, 0.0, 0.5, 1.0),
+pub const OPENGL_TO_WGPU_MATRIX: cgmath::Matrix4<f32> = cgmath::Matrix4::from_cols(  
+    cgmath::Vector4::new(1.0,  0.0,  0.0, 0.0),  
+    cgmath::Vector4::new(0.0,  1.0,  0.0, 0.0),  
+    cgmath::Vector4::new(0.0,  0.0, -0.5, 0.0), // negated z scale  
+    cgmath::Vector4::new(0.0,  0.0,  0.5, 1.0), // same z offset  
 );
 
 const SAFE_FRAC_PI_2: f32 = FRAC_PI_2 - 0.0001;
