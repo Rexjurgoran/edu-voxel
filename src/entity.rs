@@ -45,9 +45,6 @@ impl Face {
 
 /// Chunk consisting of blocks
 pub struct Chunk {
-    location: [u8; 2], // Location of the chunk in the world (x, z)
-    // Faces I want to render
-    face_buffer: wgpu::Buffer,
     pub(crate) face_bind_group: wgpu::BindGroup,
     pub face_count: u32,
 }
@@ -57,8 +54,7 @@ impl Chunk {
     const CHUNK_LENGTH: usize = 16;
     const CHUNK_HEIGHT: usize = 32;
 
-    // Create a new chunk with half of the blocks set to 1 and the other half set to 0
-    pub fn half(device: &wgpu::Device, location: [u8; 2], layout: &wgpu::BindGroupLayout) -> Self {
+    pub fn generate_voxels() -> Vec<Voxel> {
         let block_amount = Self::CHUNK_WIDTH * Self::CHUNK_LENGTH * Self::CHUNK_HEIGHT;
         let mut blocks = Vec::with_capacity(block_amount);
 
@@ -93,8 +89,16 @@ impl Chunk {
         for _ in 0..Self::CHUNK_WIDTH * Self::CHUNK_LENGTH * 16 {
             blocks.push(Voxel::new(0));
         }
+        blocks
+    }
 
-        let faces = Self::get_faces(&blocks);
+    pub fn from_voxels(
+        device: &wgpu::Device,
+        voxels: Vec<Voxel>,
+        layout: &wgpu::BindGroupLayout,
+        neighbors: &[Option<&Vec<Voxel>>; 6],
+    ) -> Self {
+        let faces = Self::get_faces(&voxels, neighbors);
         let face_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Face Buffer of Chunk"),
             contents: bytemuck::cast_slice(&faces),
@@ -111,16 +115,13 @@ impl Chunk {
         });
 
         Self {
-            location,
-            face_buffer,
             face_count: faces.len() as u32,
             face_bind_group,
         }
     }
 
-    /// Get faces. First only default implementation, later generate from
-    /// blocks
-    fn get_faces(voxels: &Vec<Voxel>) -> Vec<Face> {
+    /// Get faces from voxels and neighboring chunks. Only faces that are adjacent to air will be returned.
+    fn get_faces(voxels: &Vec<Voxel>, neighbors: &[Option<&Vec<Voxel>>; 6]) -> Vec<Face> {
         let mut faces = Vec::new();
         for x in 0..Self::CHUNK_WIDTH {
             for y in 0..Self::CHUNK_HEIGHT {
@@ -133,27 +134,85 @@ impl Chunk {
 
                     let location = [x as u8, y as u8, z as u8];
 
-                    if x == 0 || voxels[Self::index(x - 1, y, z)].id == 0 {
+                    // Face Left
+                    if x == 0 {
+                        // Voxel is left chunk border
+                        let is_air = neighbors[1]
+                            .map(|voxels| voxels[Self::index(Self::CHUNK_WIDTH - 1, y, z)].id == 0)
+                            .unwrap_or(true); // If there is no neighboring chunk, treat it as air
+                        if is_air {
+                            faces.push(Face::new(location, FACE_LEFT, voxel_id));
+                        }
+                    } else if voxels[Self::index(x - 1, y, z)].id == 0 {
+                        // Voxel to the left is air
                         faces.push(Face::new(location, FACE_LEFT, voxel_id));
                     }
 
-                    if x == Self::CHUNK_WIDTH - 1 || voxels[Self::index(x + 1, y, z)].id == 0 {
+                    // Face Right
+                    if x == Self::CHUNK_WIDTH - 1 {
+                        // Voxel is right chunk border
+                        let is_air = neighbors[0]
+                            .map(|voxels| voxels[Self::index(0, y, z)].id == 0)
+                            .unwrap_or(true); // If there is no neighboring chunk, treat it as air
+                        if is_air {
+                            faces.push(Face::new(location, FACE_RIGHT, voxel_id));
+                        }
+                    } else if voxels[Self::index(x + 1, y, z)].id == 0 {
+                        // Voxel to the right is air
                         faces.push(Face::new(location, FACE_RIGHT, voxel_id));
                     }
 
-                    if y == 0 || voxels[Self::index(x, y - 1, z)].id == 0 {
+                    // Face Bottom
+                    if y == 0 {
+                        // Voxel is bottom chunk border
+                        let is_air = neighbors[3]
+                            .map(|voxels| voxels[Self::index(x, Self::CHUNK_HEIGHT - 1, z)].id == 0)
+                            .unwrap_or(true); // If there is no neighboring chunk, treat it as air
+                        if is_air {
+                            faces.push(Face::new(location, FACE_BOTTOM, voxel_id));
+                        }
+                    } else if voxels[Self::index(x, y - 1, z)].id == 0 {
+                        // Voxel below is air
                         faces.push(Face::new(location, FACE_BOTTOM, voxel_id));
                     }
 
-                    if y == Self::CHUNK_HEIGHT - 1 || voxels[Self::index(x, y + 1, z)].id == 0 {
+                    // Face Top
+                    if y == Self::CHUNK_HEIGHT - 1 {
+                        // Voxel is top chunk border
+                        let is_air = neighbors[2]
+                            .map(|voxels| voxels[Self::index(x, 0, z)].id == 0)
+                            .unwrap_or(true); // If there is no neighboring chunk, treat it as air
+                        if is_air {
+                            faces.push(Face::new(location, FACE_TOP, voxel_id));
+                        }
+                    } else if voxels[Self::index(x, y + 1, z)].id == 0 {
+                        // Voxel above is air
                         faces.push(Face::new(location, FACE_TOP, voxel_id));
                     }
 
-                    if z == 0 || voxels[Self::index(x, y, z - 1)].id == 0 {
+                    // Face Back
+                    if z == 0 {
+                        // Voxel is back chunk border
+                        let is_air = neighbors[5]
+                            .map(|voxels| voxels[Self::index(x, y, Self::CHUNK_LENGTH - 1)].id == 0)
+                            .unwrap_or(true); // If there is no neighboring chunk, treat it as air
+                        if is_air {
+                            faces.push(Face::new(location, FACE_BACK, voxel_id));
+                        }
+                    } else if voxels[Self::index(x, y, z - 1)].id == 0 {
                         faces.push(Face::new(location, FACE_BACK, voxel_id));
                     }
 
-                    if z == Self::CHUNK_LENGTH - 1 || voxels[Self::index(x, y, z + 1)].id == 0 {
+                    // Face Front
+                    if z == Self::CHUNK_LENGTH - 1 {
+                        // Voxel is front chunk border
+                        let is_air = neighbors[4]
+                            .map(|voxels| voxels[Self::index(x, y, 0)].id == 0)
+                            .unwrap_or(true); // If there is no neighboring chunk, treat it as air
+                        if is_air {
+                            faces.push(Face::new(location, FACE_FRONT, voxel_id));
+                        }
+                    } else if voxels[Self::index(x, y, z + 1)].id == 0 {
                         faces.push(Face::new(location, FACE_FRONT, voxel_id));
                     }
                 }
@@ -165,10 +224,6 @@ impl Chunk {
     fn index(x: usize, y: usize, z: usize) -> usize {
         x + Self::CHUNK_WIDTH * (z + Self::CHUNK_LENGTH * y)
     }
-
-    pub fn get_face_buffer(&self) -> &wgpu::Buffer {
-        &self.face_buffer
-    }
 }
 
 /// World consisting of chunks
@@ -178,9 +233,52 @@ pub struct World {
 impl World {
     pub fn new(device: &wgpu::Device, face_bind_group_layout: &wgpu::BindGroupLayout) -> Self {
         let mut chunks = Vec::new();
-        for x in 0..Self::WORLD_WIDTH {
-            for z in 0..Self::WORLD_LENGTH {
-                let chunk = Chunk::half(device, [x as u8, z as u8], face_bind_group_layout);
+        let mut voxel_data = Vec::new();
+        for _z in 0..Self::WORLD_WIDTH {
+            for _x in 0..Self::WORLD_LENGTH {
+                let chunk_voxels = Chunk::generate_voxels();
+                voxel_data.push(chunk_voxels);
+            }
+        }
+
+        // Create chunks from voxel data with neighboring chunk information
+        for z in 0..Self::WORLD_WIDTH {
+            for x in 0..Self::WORLD_LENGTH {
+                let idx = Self::index(x, z);
+                let neighbors = [
+                    // Right neighbor
+                    if x < Self::WORLD_WIDTH - 1 {
+                        Some(&voxel_data[Self::index(x + 1, z)])
+                    } else {
+                        None
+                    },
+                    // Left neighbor
+                    if x > 0 {
+                        Some(&voxel_data[Self::index(x - 1, z)])
+                    } else {
+                        None
+                    },
+                    None, // Top neighbor
+                    None, // Bottom neighbor
+                    // Front neighbor
+                    if z < Self::WORLD_LENGTH - 1 {
+                        Some(&voxel_data[Self::index(x, z + 1)])
+                    } else {
+                        None
+                    },
+                    // Back neighbor
+                    if z > 0 {
+                        Some(&voxel_data[Self::index(x, z - 1)])
+                    } else {
+                        None
+                    },
+                ];
+                let chunk = Chunk::from_voxels(
+                    device,
+                    voxel_data[idx].clone(),
+                    face_bind_group_layout,
+                    &neighbors,
+                );
                 chunks.push(chunk);
             }
         }
@@ -189,10 +287,6 @@ impl World {
 
     fn index(x: usize, z: usize) -> usize {
         x + Self::WORLD_WIDTH * z
-    }
-
-    pub fn get_chunk(&self, x: usize, z: usize) -> &Chunk {
-        &self.chunks[Self::index(x, z)]
     }
 
     pub const WORLD_WIDTH: usize = 16;
