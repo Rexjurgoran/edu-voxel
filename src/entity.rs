@@ -1,3 +1,4 @@
+use noise::{NoiseFn, Perlin};
 use wgpu::util::DeviceExt;
 
 // Face direction constants. The origin of a voxel is the bottom left corner.
@@ -53,43 +54,44 @@ impl Chunk {
     const CHUNK_WIDTH: usize = 16;
     const CHUNK_LENGTH: usize = 16;
     const CHUNK_HEIGHT: usize = 32;
+    const MIN_HEIGHT: f64 = 8.0;
+    const MAX_HEIGHT: f64 = 20.0;
+    const SEED: u32 = 1234;
 
-    pub fn generate_voxels() -> Vec<Voxel> {
-        let block_amount = Self::CHUNK_WIDTH * Self::CHUNK_LENGTH * Self::CHUNK_HEIGHT;
-        let mut blocks = Vec::with_capacity(block_amount);
+    pub fn generate_voxels(chunk_x: usize, chunk_z: usize) -> Vec<Voxel> {
+        let perlin = Perlin::new(Self::SEED);
+        let mut voxels =
+            vec![Voxel::new(0); Self::CHUNK_WIDTH * Self::CHUNK_LENGTH * Self::CHUNK_HEIGHT];
 
-        println!(
-            "Creating {} blocks of stone",
-            Self::CHUNK_WIDTH * Self::CHUNK_LENGTH * 10
-        );
-        for _ in 0..Self::CHUNK_WIDTH * Self::CHUNK_LENGTH * 10 {
-            blocks.push(Voxel::new(3));
+        for x in 0..Self::CHUNK_WIDTH {
+            for z in 0..Self::CHUNK_LENGTH {
+                // Convert to world coordinates
+                let world_x = (chunk_x * Self::CHUNK_WIDTH + x) as f64;
+                let world_z = (chunk_z * Self::CHUNK_LENGTH + z) as f64;
+
+                // Sample noise - scale controls terrain frequency
+                let scale = 0.02;
+                let noise_val = perlin.get([world_x * scale, world_z * scale]);
+
+                // Map noise from [-1, 1] to a block height
+                let height =
+                    ((noise_val + 1.0) / 2.0 * Self::MAX_HEIGHT + Self::MIN_HEIGHT) as usize;
+                let height = height.clamp(1, Self::CHUNK_HEIGHT - 1);
+
+                // Fill colum
+                for y in 0..height {
+                    let blocks = if y == height - 1 {
+                        2 // Grass
+                    } else if y > height - 5 {
+                        1 // Dirt
+                    } else {
+                        3 // Stone
+                    };
+                    voxels[Self::index(x, y, z)] = Voxel::new(blocks);
+                }
+            }
         }
-
-        println!(
-            "Creating {} blocks of dirt",
-            Self::CHUNK_WIDTH * Self::CHUNK_LENGTH * 5
-        );
-        for _ in 0..Self::CHUNK_WIDTH * Self::CHUNK_LENGTH * 5 {
-            blocks.push(Voxel::new(1));
-        }
-
-        println!(
-            "Creating {} blocks of grass",
-            Self::CHUNK_WIDTH * Self::CHUNK_LENGTH
-        );
-        for _ in 0..Self::CHUNK_WIDTH * Self::CHUNK_LENGTH {
-            blocks.push(Voxel::new(2));
-        }
-
-        print!(
-            "Creating {} blocks of air",
-            Self::CHUNK_WIDTH * Self::CHUNK_LENGTH * 16
-        );
-        for _ in 0..Self::CHUNK_WIDTH * Self::CHUNK_LENGTH * 16 {
-            blocks.push(Voxel::new(0));
-        }
-        blocks
+        voxels
     }
 
     pub fn from_voxels(
@@ -234,9 +236,9 @@ impl World {
     pub fn new(device: &wgpu::Device, face_bind_group_layout: &wgpu::BindGroupLayout) -> Self {
         let mut chunks = Vec::new();
         let mut voxel_data = Vec::new();
-        for _z in 0..Self::WORLD_WIDTH {
-            for _x in 0..Self::WORLD_LENGTH {
-                let chunk_voxels = Chunk::generate_voxels();
+        for z in 0..Self::WORLD_WIDTH {
+            for x in 0..Self::WORLD_LENGTH {
+                let chunk_voxels = Chunk::generate_voxels(x, z);
                 voxel_data.push(chunk_voxels);
             }
         }
