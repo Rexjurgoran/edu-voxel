@@ -10,6 +10,8 @@ pub const FACE_BOTTOM: u8 = 3; // negative Y direction
 pub const FACE_FRONT: u8 = 4; // positive Z direction
 pub const FACE_BACK: u8 = 5; // negative Z direction
 
+pub const CHUNK_HEIGHT: usize = 128;
+
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct Voxel {
@@ -53,15 +55,13 @@ impl Chunk {
     // -- Constants --
     const CHUNK_WIDTH: usize = 16;
     const CHUNK_LENGTH: usize = 16;
-    const CHUNK_HEIGHT: usize = 32;
     const MIN_HEIGHT: f64 = 8.0;
-    const MAX_HEIGHT: f64 = 20.0;
+    const MAX_HEIGHT: f64 = 50.0;
     const SEED: u32 = 1234;
 
     pub fn generate_voxels(chunk_x: usize, chunk_z: usize) -> Vec<Voxel> {
         let perlin = Perlin::new(Self::SEED);
-        let mut voxels =
-            vec![Voxel::new(0); Self::CHUNK_WIDTH * Self::CHUNK_LENGTH * Self::CHUNK_HEIGHT];
+        let mut voxels = vec![Voxel::new(0); Self::CHUNK_WIDTH * Self::CHUNK_LENGTH * CHUNK_HEIGHT];
 
         for x in 0..Self::CHUNK_WIDTH {
             for z in 0..Self::CHUNK_LENGTH {
@@ -70,13 +70,13 @@ impl Chunk {
                 let world_z = (chunk_z * Self::CHUNK_LENGTH + z) as f64;
 
                 // Sample noise - scale controls terrain frequency
-                let scale = 0.02;
+                let scale = 0.005;
                 let noise_val = perlin.get([world_x * scale, world_z * scale]);
 
                 // Map noise from [-1, 1] to a block height
                 let height =
                     ((noise_val + 1.0) / 2.0 * Self::MAX_HEIGHT + Self::MIN_HEIGHT) as usize;
-                let height = height.clamp(1, Self::CHUNK_HEIGHT - 1);
+                let height = height.clamp(1, CHUNK_HEIGHT - 1);
 
                 // Fill colum
                 for y in 0..height {
@@ -126,7 +126,7 @@ impl Chunk {
     fn get_faces(voxels: &Vec<Voxel>, neighbors: &[Option<&Vec<Voxel>>; 6]) -> Vec<Face> {
         let mut faces = Vec::new();
         for x in 0..Self::CHUNK_WIDTH {
-            for y in 0..Self::CHUNK_HEIGHT {
+            for y in 0..CHUNK_HEIGHT {
                 for z in 0..Self::CHUNK_LENGTH {
                     // If the block is air, skip it
                     let voxel_id = voxels[Self::index(x, y, z)].id;
@@ -168,7 +168,7 @@ impl Chunk {
                     if y == 0 {
                         // Voxel is bottom chunk border
                         let is_air = neighbors[3]
-                            .map(|voxels| voxels[Self::index(x, Self::CHUNK_HEIGHT - 1, z)].id == 0)
+                            .map(|voxels| voxels[Self::index(x, CHUNK_HEIGHT - 1, z)].id == 0)
                             .unwrap_or(true); // If there is no neighboring chunk, treat it as air
                         if is_air {
                             faces.push(Face::new(location, FACE_BOTTOM, voxel_id));
@@ -179,7 +179,7 @@ impl Chunk {
                     }
 
                     // Face Top
-                    if y == Self::CHUNK_HEIGHT - 1 {
+                    if y == CHUNK_HEIGHT - 1 {
                         // Voxel is top chunk border
                         let is_air = neighbors[2]
                             .map(|voxels| voxels[Self::index(x, 0, z)].id == 0)
@@ -291,6 +291,6 @@ impl World {
         x + Self::WORLD_WIDTH * z
     }
 
-    pub const WORLD_WIDTH: usize = 16;
-    pub const WORLD_LENGTH: usize = 16;
+    pub const WORLD_WIDTH: usize = 128;
+    pub const WORLD_LENGTH: usize = 128;
 }

@@ -18,7 +18,7 @@ use winit::{
     window::Window,
 };
 
-use crate::entity::World;
+use crate::{camera::Frustum, entity::World};
 
 #[repr(C)]
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
@@ -50,6 +50,11 @@ impl CameraUniform {
         self.view_proj = view_proj.into();
         self.inv_proj = proj.invert().unwrap().into();
         self.inv_view = view.transpose().into();
+    }
+
+    pub fn get_frustrum(&self) -> Frustum {
+        let view_proj = cgmath::Matrix4::from(self.view_proj);
+        Frustum::from_view_proj(&view_proj)
     }
 }
 
@@ -642,9 +647,14 @@ impl State {
             render_pass.set_bind_group(1, &self.camera_bind_group, &[]);
             render_pass.set_bind_group(2, &self.light_bind_group, &[]);
             render_pass.set_bind_group(3, &self.environment_bind_group, &[]);
+
+            let frustum = self.camera_uniform.get_frustrum();
             for (i, chunk) in self.world.chunks.iter().enumerate() {
                 let chunk_x = (i % World::WORLD_WIDTH) as i32;
                 let chunk_z = (i / World::WORLD_WIDTH) as i32;
+                if !frustum.contains_chunk(chunk_x, chunk_z) {
+                    continue;
+                }
                 render_pass.set_push_constants(
                     wgpu::ShaderStages::VERTEX,
                     0,

@@ -1,7 +1,9 @@
 use std::{f32::consts::FRAC_PI_2, time::Duration};
 
-use cgmath::{InnerSpace, Matrix4, Point3, Rad, Vector3};
+use cgmath::{InnerSpace, Matrix4, Point3, Rad, Vector3, Vector4};
 use winit::{dpi::PhysicalPosition, event::MouseScrollDelta, keyboard::KeyCode};
+
+use crate::entity::CHUNK_HEIGHT;
 
 const SAFE_FRAC_PI_2: f32 = FRAC_PI_2 - 0.0001;
 
@@ -196,5 +198,83 @@ impl CameraController {
         } else if camera.pitch > Rad(SAFE_FRAC_PI_2) {
             camera.pitch = Rad(SAFE_FRAC_PI_2);
         }
+    }
+}
+
+pub struct Frustum {
+    planes: [Vector4<f32>; 6],
+}
+
+impl Frustum {
+    pub fn from_view_proj(view_proj: &cgmath::Matrix4<f32>) -> Self {
+        let m = view_proj;
+        // Extract planes from view projection matrix
+        // Each plane is stored as (a, b, c, d) where ax + by + cz + d = 0
+        let planes = [
+            // Left
+            cgmath::Vector4::new(
+                m[0][3] + m[0][0],
+                m[1][3] + m[1][0],
+                m[2][3] + m[2][0],
+                m[3][3] + m[3][0],
+            ),
+            // Right
+            cgmath::Vector4::new(
+                m[0][3] - m[0][0],
+                m[1][3] - m[1][0],
+                m[2][3] - m[2][0],
+                m[3][3] - m[3][0],
+            ),
+            // Bottom
+            cgmath::Vector4::new(
+                m[0][3] + m[0][1],
+                m[1][3] + m[1][1],
+                m[2][3] + m[2][1],
+                m[3][3] + m[3][1],
+            ),
+            // Top
+            cgmath::Vector4::new(
+                m[0][3] - m[0][1],
+                m[1][3] - m[1][1],
+                m[2][3] - m[2][1],
+                m[3][3] - m[3][1],
+            ),
+            // Near
+            cgmath::Vector4::new(
+                m[0][3] + m[0][2],
+                m[1][3] + m[1][2],
+                m[2][3] + m[2][2],
+                m[3][3] + m[3][2],
+            ),
+            // Far
+            cgmath::Vector4::new(
+                m[0][3] - m[0][2],
+                m[1][3] - m[1][2],
+                m[2][3] - m[2][2],
+                m[3][3] - m[3][2],
+            ),
+        ];
+        Self { planes }
+    }
+
+    pub fn contains_chunk(&self, chunk_x: i32, chunk_z: i32) -> bool {
+        // Build chunk AABB (axis-aligned bounding box)
+        let min = cgmath::Vector3::new(chunk_x as f32 * 16.0, 0.0, chunk_z as f32 * 16.0);
+        let max = cgmath::Vector3::new(min.x + 16.0, CHUNK_HEIGHT as f32, min.z + 16.0);
+        // Test AABB against each frustum plane
+        for plane in &self.planes {
+            // Find the most positive vertex relative to plane normal
+            let p = cgmath::Vector3::new(
+                if plane.x >= 0.0 { max.x } else { min.x },
+                if plane.y >= 0.0 { max.y } else { min.y },
+                if plane.z >= 0.0 { max.z } else { min.z },
+            );
+
+            // If the positive vertex is outside the plane, chunk is outside
+            if plane.x * p.x + plane.y * p.y + plane.z * p.z + plane.w < 0.0 {
+                return false;
+            }
+        }
+        true
     }
 }
