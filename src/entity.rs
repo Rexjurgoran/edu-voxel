@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use noise::{NoiseFn, Perlin};
 use wgpu::util::DeviceExt;
 
@@ -230,11 +232,11 @@ impl Chunk {
 
 /// World consisting of chunks
 pub struct World {
-    pub(crate) chunks: Vec<Chunk>,
+    pub(crate) chunks: HashMap<(i32, i32), Chunk>,
 }
 impl World {
     pub fn new(device: &wgpu::Device, face_bind_group_layout: &wgpu::BindGroupLayout) -> Self {
-        let mut chunks = Vec::new();
+        let mut chunks = HashMap::new();
         let mut voxel_data = Vec::new();
         for z in 0..Self::WORLD_WIDTH {
             for x in 0..Self::WORLD_LENGTH {
@@ -281,7 +283,7 @@ impl World {
                     face_bind_group_layout,
                     &neighbors,
                 );
-                chunks.push(chunk);
+                chunks.insert((x as i32, z as i32), chunk);
             }
         }
         Self { chunks }

@@ -649,9 +649,7 @@ impl State {
             render_pass.set_bind_group(3, &self.environment_bind_group, &[]);
 
             let frustum = self.camera_uniform.get_frustrum();
-            for (i, chunk) in self.world.chunks.iter().enumerate() {
-                let chunk_x = (i % World::WORLD_WIDTH) as i32;
-                let chunk_z = (i / World::WORLD_WIDTH) as i32;
+            for (&(chunk_x, chunk_z), chunk) in &self.world.chunks {
                 if !frustum.contains_chunk(chunk_x, chunk_z) {
                     continue;
                 }
